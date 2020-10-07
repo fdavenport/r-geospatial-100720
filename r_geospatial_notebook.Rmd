@@ -1,6 +1,6 @@
 ---
 title: "R Geospatial Notebook"
-author: "" 
+author: "Frances Davenport" 
 date: "2020-10-07"
 output: html_notebook
 ---
@@ -15,4 +15,313 @@ When you save the notebook, an HTML file containing the code and output will be 
 
 
 ```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
 ```
+```{r}
+library(rgdal)
+library(sp)
+library(raster)
+library(sf)
+```
+
+```{r}
+list.files()
+```
+
+```{r}
+GDALinfo("./data/HARV_dsmCrop.tif")
+```
+
+```{r}
+dsm <- raster("./data/HARV_dsmCrop.tif")
+dsm
+```
+```{r}
+class(dsm)
+```
+
+```{r}
+plot(dsm)
+```
+```{r}
+summary(dsm)
+```
+```{r}
+cellStats(dsm, stat='mean')
+```
+```{r}
+dsm[1:8, 1:8]
+```
+
+```{r}
+crs(dsm)
+```
+
+```{r}
+dsm_df <- as.data.frame(dsm, xy=TRUE)
+head(dsm_df)
+```
+```{r}
+nrow(dsm)
+ncol(dsm)
+```
+```{r}
+nrow(dsm_df)
+1367*1697
+```
+```{r}
+ggplot() + 
+  geom_raster(data = dsm_df, aes(x=x, y=y, fill=HARV_dsmCrop)) + 
+  scale_fill_viridis_c()
+```
+```{r}
+ggplot() + 
+  geom_histogram(data = dsm_df, aes(HARV_dsmCrop), bins=40)
+```
+```{r}
+dsm_df <- dsm_df %>%
+  mutate(elevation_bin = cut(HARV_dsmCrop, breaks = c(300, 340, 380, 420)))
+
+```
+
+```{r}
+ggplot() + 
+  geom_bar(data = dsm_df, aes(elevation_bin))
+```
+```{r}
+dtm <- raster("./data/HARV_dtmCrop.tif")
+plot(dtm)
+```
+```{r}
+canopy_height <- dsm - dtm
+plot(canopy_height)
+```
+```{r}
+mean_dtm <- cellStats(dtm, stat='mean')
+mean_dtm
+```
+```{r}
+dtm_anom <- dtm - mean_dtm
+plot(dtm_anom)
+```
+```{r}
+writeRaster(canopy_height, "./data/canopy_height.tif", overwrite=TRUE)
+```
+
+```{r}
+harv_rgb <- stack("./data/HARV_RGB_Ortho.tif")
+harv_rgb
+```
+
+```{r}
+plot(harv_rgb)
+```
+
+```{r}
+plotRGB(harv_rgb, r = 1, g = 2, b = 3)
+```
+```{r}
+aoi_sp <- shapefile("./data/HarClip_UTMZ18.shp")
+aoi_sp
+```
+```{r}
+plot(aoi_sp)
+```
+```{r}
+aoi_sp[1,]
+```
+```{r}
+aoi <- st_read("./data/HarClip_UTMZ18.shp")
+```
+
+```{r}
+plot(aoi)
+```
+```{r}
+head(aoi)
+```
+```{r}
+ggplot() +
+  geom_sf(data = aoi)
+```
+```{r}
+ne_state <- st_read("./data/Boundary-US-State-NEast.shp")
+```
+
+```{r}
+plot(ne_state)
+```
+```{r}
+names(ne_state)
+```
+```{r}
+head(ne_state)
+```
+
+```{r}
+ggplot() + 
+  geom_sf(data = ne_state, aes(fill = NAME))
+```
+```{r}
+ggplot() +
+  geom_sf(data = ne_state, aes(fill = AWATER))
+```
+```{r}
+mass <- filter(ne_state, NAME == "Massachusetts")
+ggplot() + 
+  geom_sf(data = mass)
+```
+```{r}
+mass
+```
+```{r}
+roads <- st_read("./data/HARV_roads.shp")
+```
+
+```{r}
+names(roads)
+```
+```{r}
+head(roads)
+```
+```{r}
+roads[1,]
+```
+
+```{r}
+roads$TYPE
+```
+```{r}
+roads[,"LABEL"]
+```
+
+```{r}
+st_crs(roads)
+```
+```{r}
+st_geometry(roads)
+```
+```{r}
+st_coordinates(roads)
+```
+```{r}
+tower <- st_read("./data/HARVtower_UTM18N.shp")
+```
+
+```{r}
+ggplot() + 
+  geom_sf(data = aoi, fill = "green", alpha = 0.5) + 
+  geom_sf(data = roads) + 
+  geom_sf(data = tower, col = "red", size = 10, shape = "*")
+```
+```{r}
+ggplot() + 
+  geom_sf(data = roads, aes(col = LABEL, linetype = TYPE))
+```
+```{r}
+tower_buffer <- st_buffer(tower, 200)
+
+```
+
+```{r}
+ggplot()+ 
+  geom_sf(data = tower) + 
+  geom_sf(data = tower_buffer, fill = "blue", alpha = 0.3)
+```
+```{r}
+crs(canopy_height)
+st_crs(tower_buffer)
+```
+```{r}
+canopy_masked <- mask(canopy_height, tower_buffer, inverse=TRUE)
+plot(canopy_masked)
+```
+```{r}
+st_bbox(tower_buffer)
+```
+```{r}
+canopy_masked <- crop(canopy_masked, extent(731900, 732500, 4713000, 4713500))
+plot(canopy_masked)
+```
+```{r}
+cellStats(canopy_masked, stat = "mean")
+```
+```{r}
+canopy_extracted_values <- raster::extract(canopy_height, tower_buffer)
+```
+```{r}
+canopy_extracted_values <- unlist(canopy_extracted_values)
+hist(canopy_extracted_values)
+```
+```{r}
+ndvi_files <- list.files("./data/NDVI", full.names=TRUE, pattern = ".tif$")
+ndvi_files
+```
+
+```{r}
+ndvi <- stack(ndvi_files)
+ndvi
+```
+
+```{r}
+ndvi_Z18 <- projectRaster(ndvi, crs = crs(dtm))
+ndvi_Z18
+```
+```{r}
+plot(ndvi_Z18, 1)
+```
+
+```{r}
+cellStats(ndvi_Z18, stat="mean")
+```
+```{r}
+tower_ndvi <- raster::extract(ndvi_Z18, tower)
+tower_ndvi
+```
+```{r}
+ndvi_df <- as.data.frame(tower_ndvi[1,])
+ndvi_df
+```
+```{r}
+julian_day <- gsub("X|_HARV_ndvi_crop", "", row.names(ndvi_df))
+julian_day
+```
+```{r}
+origin <- as.Date("2011-01-01")
+ndvi_df$date <- origin + as.integer(julian_day)
+names(ndvi_df) <- c("tower_ndvi", "date")
+ndvi_df
+```
+```{r}
+ggplot() + 
+  geom_point(data = ndvi_df, aes(x = date, y = tower_ndvi)) 
+```
+```{r}
+field_locations <- read.csv("./data/HARV_PlotLocations.csv")
+```
+
+```{r}
+class(field_locations)
+```
+```{r}
+head(field_locations)
+```
+```{r}
+utm18crs <- st_crs(tower)
+utm18crs
+```
+
+```{r}
+field_locations_sf <- st_as_sf(field_locations, coords = c("easting", "northing"),
+                               crs=utm18crs)
+```
+```{r}
+field_locations_sf
+```
+```{r}
+st_write(field_locations_sf, "./data/FieldLocations_HARV.shp", 
+         driver = "ESRI Shapefile", delete_dsn=TRUE)
+```
+
